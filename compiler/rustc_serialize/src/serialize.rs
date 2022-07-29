@@ -4,6 +4,7 @@
 Core encoding and decoding interfaces.
 */
 
+use std::alloc::Allocator;
 use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
 use std::marker::PhantomData;
@@ -229,7 +230,7 @@ impl<D: Decoder, T> Decodable<D> for PhantomData<T> {
     }
 }
 
-impl<D: Decoder, A: std::alloc::Allocator + Default, T: Decodable<D>> Decodable<D> for Box<[T], A> {
+impl<D: Decoder, A: Allocator + Default, T: Decodable<D>> Decodable<D> for Box<[T], A> {
     fn decode(d: &mut D) -> Box<[T], A> {
         let v: Vec<T, A> = Decodable::decode(d);
         v.into_boxed_slice()
@@ -264,7 +265,7 @@ impl<S: Encoder, T: Encodable<S>> Encodable<S> for Vec<T> {
     }
 }
 
-impl<D: Decoder, T: Decodable<D>, A: std::alloc::Allocator + Default> Decodable<D> for Vec<T, A> {
+impl<D: Decoder, T: Decodable<D>, A: Allocator + Default> Decodable<D> for Vec<T, A> {
     default fn decode(d: &mut D) -> Vec<T, A> {
         let len = d.read_usize();
         let allocator = A::default();
@@ -458,16 +459,14 @@ impl<D: Decoder, T: Decodable<D>> Decodable<D> for Arc<T> {
     }
 }
 
-impl<D: Decoder, A: std::alloc::Allocator + Default, T: Decodable<D>> Decodable<D> for Box<T, A> {
+impl<D: Decoder, A: Allocator + Default, T: Decodable<D>> Decodable<D> for Box<T, A> {
     fn decode(d: &mut D) -> Box<T, A> {
         let allocator = A::default();
         Box::new_in(Decodable::decode(d), allocator)
     }
 }
 
-impl<S: Encoder, T: ?Sized + Encodable<S>, A: std::alloc::Allocator + Default> Encodable<S>
-    for Box<T, A>
-{
+impl<S: Encoder, T: ?Sized + Encodable<S>, A: Allocator + Default> Encodable<S> for Box<T, A> {
     fn encode(&self, s: &mut S) {
         (**self).encode(s)
     }
