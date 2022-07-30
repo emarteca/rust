@@ -103,7 +103,7 @@ impl<D: rustc_type_ir::TyDecoder, Prov: rustc_serialize::Decodable<D>
         //         extra
         //     })
         // })
-        panic!("omfg");
+        todo!();
     }
 }
 
@@ -115,7 +115,7 @@ impl<S: rustc_type_ir::TyEncoder> rustc_serialize::Encodable<S> for Allocation {
         // self.align.encode(s);
         // self.mutability.encode(s);
         // self.extra.encode(s);
-        // panic!("oh my god");
+        todo!();
     }
 }
 
@@ -134,7 +134,7 @@ const MAX_HASHED_BUFFER_LEN: usize = 2 * MAX_BYTES_TO_HASH;
 // expensive especially since it uses `FxHash`: it's better suited to short keys, not potentially
 // big buffers like the actual bytes of allocation. We can partially hash some fields when they're
 // large.
-impl hash::Hash for Allocation {
+impl<A: std::alloc::Allocator + Default + std::fmt::Debug> hash::Hash for Allocation<AllocId, (), A> {
     fn hash<H: hash::Hasher>(&self, state: &mut H) {
         // Partially hash the `bytes` buffer when it is large. To limit collisions with common
         // prefixes and suffixes, we hash the length and some slices of the buffer.
@@ -167,11 +167,40 @@ impl hash::Hash for Allocation {
 /// Here things are different because only const allocations are interned. This
 /// means that both the inner type (`Allocation`) and the outer type
 /// (`ConstAllocation`) are used quite a bit.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, HashStable)]
+#[derive(Copy, Clone)]
 #[rustc_pass_by_value]
-pub struct ConstAllocation<'tcx, Prov: Eq + std::cmp::Ord = AllocId, Extra: Eq + std::cmp::Ord  = ()>(
-    pub Interned<'tcx, Allocation<Prov, Extra>>,
+pub struct ConstAllocation<'tcx, Prov: Eq + std::cmp::Ord = AllocId, Extra: Eq + std::cmp::Ord  = (),
+A: std::alloc::Allocator + Default + std::fmt::Debug = std::alloc::Global>(
+    pub Interned<'tcx, Allocation<Prov, Extra, A>>,
 );
+
+impl<'tcx, CTX, Prov: HashStable<CTX> + Eq + std::cmp::Ord, Extra: HashStable<CTX> + Eq + std::cmp::Ord, 
+    A: std::alloc::Allocator + Default + std::fmt::Debug> HashStable<CTX> for ConstAllocation<'tcx, Prov, Extra, A> {
+    fn hash_stable(&self, ctx: &mut CTX, hasher: &mut StableHasher) {
+        self.0.0.hash_stable(ctx, hasher);
+    }
+}
+
+impl<'tcx, Prov: Eq + std::cmp::Ord, Extra: Eq + std::cmp::Ord, 
+    A: std::alloc::Allocator + Default + std::fmt::Debug> PartialEq for ConstAllocation<'tcx, Prov, Extra, A> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.0 == other.0.0
+    }
+}
+impl<'tcx, Prov: Eq + std::cmp::Ord, Extra: Eq + std::cmp::Ord, 
+    A: std::alloc::Allocator + Default + std::fmt::Debug> Eq for ConstAllocation<'tcx, Prov, Extra, A> {}
+impl<'tcx, Prov: Eq + std::cmp::Ord, Extra: Eq + std::cmp::Ord, 
+    A: std::alloc::Allocator + Default + std::fmt::Debug> std::cmp::Ord for ConstAllocation<'tcx, Prov, Extra, A> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (self.0.0).cmp(other.0.0)
+    }
+}
+impl<'tcx, Prov: Eq + std::cmp::Ord, Extra: Eq + std::cmp::Ord, 
+    A: std::alloc::Allocator + Default + std::fmt::Debug> std::cmp::PartialOrd for ConstAllocation<'tcx, Prov, Extra, A> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
 
 impl<'tcx> fmt::Debug for ConstAllocation<'tcx> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -181,9 +210,16 @@ impl<'tcx> fmt::Debug for ConstAllocation<'tcx> {
     }
 }
 
-impl<'tcx, Prov: Eq + std::cmp::Ord, Extra: Eq + std::cmp::Ord> ConstAllocation<'tcx, Prov, Extra> {
-    pub fn inner(self) -> &'tcx Allocation<Prov, Extra> {
+impl<'tcx, Prov: Eq + std::cmp::Ord, Extra: Eq + std::cmp::Ord, 
+    A: std::alloc::Allocator + Default + std::fmt::Debug> ConstAllocation<'tcx, Prov, Extra, A> {
+    pub fn inner(self) -> &'tcx Allocation<Prov, Extra, A> {
         self.0.0
+    }
+}
+
+impl<'tcx, A: std::alloc::Allocator + Default + std::fmt::Debug> hash::Hash for ConstAllocation<'tcx, AllocId, (), A> {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        self.0.0.hash(state);
     }
 }
 

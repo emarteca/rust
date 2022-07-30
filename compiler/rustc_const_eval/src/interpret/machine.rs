@@ -335,7 +335,7 @@ pub trait Machine<'mir, 'tcx>: Sized {
     fn adjust_allocation<'b>(
         ecx: &InterpCx<'mir, 'tcx, Self>,
         id: AllocId,
-        alloc: Cow<'b, Allocation<AllocId, (), Self::CustomAllocator>>fn t,
+        alloc: Cow<'b, Allocation<AllocId, (), Self::CustomAllocator>>,
         kind: Option<MemoryKind<Self::MemoryKind>>,
         adjust_alloc_id: bool,
     ) -> InterpResult<'tcx, (Cow<'b, Allocation<Self::Provenance, Self::AllocExtra, Self::CustomAllocator>>, AllocId)>;
