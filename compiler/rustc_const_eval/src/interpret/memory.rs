@@ -113,16 +113,16 @@ pub struct Memory<'mir, 'tcx, M: Machine<'mir, 'tcx>> {
 /// A reference to some allocation that was already bounds-checked for the given region
 /// and had the on-access machine hooks run.
 #[derive(Copy, Clone)]
-pub struct AllocRef<'a, 'tcx, Prov, Extra> {
-    alloc: &'a Allocation<Prov, Extra>,
+pub struct AllocRef<'a, 'tcx, Prov, Extra, A: std::alloc::Allocator + Default + std::fmt::Debug> {
+    alloc: &'a Allocation<Prov, Extra, A>,
     range: AllocRange,
     tcx: TyCtxt<'tcx>,
     alloc_id: AllocId,
 }
 /// A reference to some allocation that was already bounds-checked for the given region
 /// and had the on-access machine hooks run.
-pub struct AllocRefMut<'a, 'tcx, Prov, Extra> {
-    alloc: &'a mut Allocation<Prov, Extra>,
+pub struct AllocRefMut<'a, 'tcx, Prov, Extra, A: std::alloc::Allocator + Default + std::fmt::Debug> {
+    alloc: &'a mut Allocation<Prov, Extra, A>,
     range: AllocRange,
     tcx: TyCtxt<'tcx>,
     alloc_id: AllocId,
@@ -218,7 +218,7 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
     /// This can fail only of `alloc` contains relocations.
     pub fn allocate_raw_ptr(
         &mut self,
-        alloc: Allocation,
+        alloc: Allocation<AllocId, (), M::CustomAllocator>,
         kind: MemoryKind<M::MemoryKind>,
     ) -> InterpResult<'tcx, Pointer<M::Provenance>> {
         let id = self.tcx.reserve_alloc_id();
@@ -227,7 +227,7 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
             M::GLOBAL_KIND.map(MemoryKind::Machine),
             "dynamically allocating global memory"
         );
-        let alloc = M::adjust_allocation(self, id, Cow::Owned(alloc), Some(kind))?;
+        let (alloc, id) = M::adjust_allocation(self, id, Cow::Owned(alloc), Some(kind), true /* do reassign allocid */)?;
         self.memory.alloc_map.insert(id, (kind, alloc.into_owned()));
         Ok(M::adjust_alloc_base_pointer(self, Pointer::from(id)))
     }
@@ -401,8 +401,10 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
     ) -> InterpResult<'tcx, Option<T>> {
         fn check_offset_align<'tcx>(offset: u64, align: Align) -> InterpResult<'tcx> {
             if offset % align.bytes() == 0 {
+                // println!("NONREEE -- check offset align success: {:?}", offset);
                 Ok(())
             } else {
+                // println!("REEEEEEE -- check offset align error: {:?}", offset);
                 // The biggest power of two through which `offset` is divisible.
                 let offset_pow2 = 1 << offset.trailing_zeros();
                 throw_ub!(AlignmentCheckFailed {
@@ -411,7 +413,7 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
                 })
             }
         }
-
+        
         Ok(match self.ptr_try_get_alloc_id(ptr) {
             Err(addr) => {
                 // We couldn't get a proper allocation. This is only okay if the access size is 0,
@@ -476,7 +478,8 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
         &self,
         id: AllocId,
         is_write: bool,
-    ) -> InterpResult<'tcx, Cow<'tcx, Allocation<M::Provenance, M::AllocExtra>>> {
+    ) -> InterpResult<'tcx, Cow<'tcx, Allocation<M::Provenance, M::AllocExtra, M::CustomAllocator>>> {
+        // println!("Global alloc: {:?}", id);
         let (alloc, def_id) = match self.tcx.try_get_global_alloc(id) {
             Some(GlobalAlloc::Memory(mem)) => {
                 // Memory of a constant or promoted or anonymous memory referenced by a static.
@@ -510,12 +513,18 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
         };
         M::before_access_global(*self.tcx, &self.machine, id, alloc, def_id, is_write)?;
         // We got tcx memory. Let the machine initialize its "extra" stuff.
-        M::adjust_allocation(
+        match M::adjust_allocation(
             self,
             id, // always use the ID we got as input, not the "hidden" one.
             Cow::Borrowed(alloc.inner()),
             M::GLOBAL_KIND.map(MemoryKind::Machine),
-        )
+            false, // don't reassign the allocid
+        ) {
+            Ok((cow, _new_id)) => {
+                Ok(cow)}
+                ,
+            Err(e) => Err(e),
+        }
     }
 
     /// Gives raw access to the `Allocation`, without bounds or alignment checks.
@@ -523,7 +532,7 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
     fn get_alloc_raw(
         &self,
         id: AllocId,
-    ) -> InterpResult<'tcx, &Allocation<M::Provenance, M::AllocExtra>> {
+    ) -> InterpResult<'tcx, &Allocation<M::Provenance, M::AllocExtra, M::CustomAllocator>> {
         // The error type of the inner closure here is somewhat funny.  We have two
         // ways of "erroring": An actual error, or because we got a reference from
         // `get_global_alloc` that we can actually use directly without inserting anything anywhere.
@@ -559,7 +568,7 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
         ptr: Pointer<Option<M::Provenance>>,
         size: Size,
         align: Align,
-    ) -> InterpResult<'tcx, Option<AllocRef<'a, 'tcx, M::Provenance, M::AllocExtra>>> {
+    ) -> InterpResult<'tcx, Option<AllocRef<'a, 'tcx, M::Provenance, M::AllocExtra, M::CustomAllocator>>> {
         let align = M::enforce_alignment(self).then_some(align);
         let ptr_and_alloc = self.check_and_deref_ptr(
             ptr,
@@ -597,7 +606,7 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
     fn get_alloc_raw_mut(
         &mut self,
         id: AllocId,
-    ) -> InterpResult<'tcx, (&mut Allocation<M::Provenance, M::AllocExtra>, &mut M)> {
+    ) -> InterpResult<'tcx, (&mut Allocation<M::Provenance, M::AllocExtra, M::CustomAllocator>, &mut M)> {
         // We have "NLL problem case #3" here, which cannot be worked around without loss of
         // efficiency even for the common case where the key is in the map.
         // <https://rust-lang.github.io/rfcs/2094-nll.html#problem-case-3-conditional-control-flow-across-functions>
@@ -626,7 +635,7 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
         ptr: Pointer<Option<M::Provenance>>,
         size: Size,
         align: Align,
-    ) -> InterpResult<'tcx, Option<AllocRefMut<'a, 'tcx, M::Provenance, M::AllocExtra>>> {
+    ) -> InterpResult<'tcx, Option<AllocRefMut<'a, 'tcx, M::Provenance, M::AllocExtra, M::CustomAllocator>>> {
         let parts = self.get_ptr_access(ptr, size, align)?;
         if let Some((alloc_id, offset, prov)) = parts {
             let tcx = *self.tcx;
@@ -821,11 +830,11 @@ pub struct DumpAllocs<'a, 'mir, 'tcx, M: Machine<'mir, 'tcx>> {
 impl<'a, 'mir, 'tcx, M: Machine<'mir, 'tcx>> std::fmt::Debug for DumpAllocs<'a, 'mir, 'tcx, M> {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // Cannot be a closure because it is generic in `Prov`, `Extra`.
-        fn write_allocation_track_relocs<'tcx, Prov: Provenance, Extra>(
+        fn write_allocation_track_relocs<'tcx, Prov: Provenance, Extra, A: std::alloc::Allocator + Default + std::fmt::Debug>(
             fmt: &mut std::fmt::Formatter<'_>,
             tcx: TyCtxt<'tcx>,
             allocs_to_print: &mut VecDeque<AllocId>,
-            alloc: &Allocation<Prov, Extra>,
+            alloc: &Allocation<Prov, Extra, A>,
         ) -> std::fmt::Result {
             for alloc_id in alloc.relocations().values().filter_map(|prov| prov.get_alloc_id()) {
                 allocs_to_print.push_back(alloc_id);
@@ -892,7 +901,8 @@ impl<'a, 'mir, 'tcx, M: Machine<'mir, 'tcx>> std::fmt::Debug for DumpAllocs<'a, 
 }
 
 /// Reading and writing.
-impl<'tcx, 'a, Prov: Provenance, Extra> AllocRefMut<'a, 'tcx, Prov, Extra> {
+impl<'tcx, 'a, Prov: Provenance, Extra, A: std::alloc::Allocator + Default + std::fmt::Debug> 
+    AllocRefMut<'a, 'tcx, Prov, Extra, A> {
     /// `range` is relative to this allocation reference, not the base of the allocation.
     pub fn write_scalar(
         &mut self,
@@ -925,7 +935,8 @@ impl<'tcx, 'a, Prov: Provenance, Extra> AllocRefMut<'a, 'tcx, Prov, Extra> {
     }
 }
 
-impl<'tcx, 'a, Prov: Provenance, Extra> AllocRef<'a, 'tcx, Prov, Extra> {
+impl<'tcx, 'a, Prov: Provenance, Extra, A: std::alloc::Allocator + Default + std::fmt::Debug> 
+    AllocRef<'a, 'tcx, Prov, Extra, A> {
     /// `range` is relative to this allocation reference, not the base of the allocation.
     pub fn read_scalar(
         &self,
@@ -1207,7 +1218,9 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
                     Err(addr.bytes())
                 }
             },
-            Err(addr) => Err(addr.bytes()),
+            Err(addr) => {
+                Err(addr.bytes())
+            },
         }
     }
 

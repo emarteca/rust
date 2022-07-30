@@ -10,6 +10,8 @@ Core encoding and decoding interfaces.
     test(attr(allow(unused_variables), deny(warnings)))
 )]
 #![feature(never_type)]
+#![feature(allocator_api)]
+#![feature(box_into_inner)]
 #![feature(associated_type_bounds)]
 #![feature(min_specialization)]
 #![feature(core_intrinsics)]

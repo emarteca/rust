@@ -3,7 +3,7 @@
 Rust MIR: a lowered representation of Rust.
 
 */
-
+#![feature(allocator_api)]
 #![feature(assert_matches)]
 #![feature(box_patterns)]
 #![feature(control_flow_enum)]

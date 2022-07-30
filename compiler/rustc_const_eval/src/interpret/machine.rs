@@ -102,10 +102,12 @@ pub trait Machine<'mir, 'tcx>: Sized {
     /// Extra data stored in every allocation.
     type AllocExtra: Debug + Clone + 'static;
 
+    type CustomAllocator: std::alloc::Allocator + Default + Debug + Clone + 'static;
+
     /// Memory's allocation map
     type MemoryMap: AllocMap<
             AllocId,
-            (MemoryKind<Self::MemoryKind>, Allocation<Self::Provenance, Self::AllocExtra>),
+            (MemoryKind<Self::MemoryKind>, Allocation<Self::Provenance, Self::AllocExtra, Self::CustomAllocator>),
         > + Default
         + Clone;
 
@@ -333,9 +335,10 @@ pub trait Machine<'mir, 'tcx>: Sized {
     fn adjust_allocation<'b>(
         ecx: &InterpCx<'mir, 'tcx, Self>,
         id: AllocId,
-        alloc: Cow<'b, Allocation>,
+        alloc: Cow<'b, Allocation<AllocId, (), Self::CustomAllocator>>fn t,
         kind: Option<MemoryKind<Self::MemoryKind>>,
-    ) -> InterpResult<'tcx, Cow<'b, Allocation<Self::Provenance, Self::AllocExtra>>>;
+        adjust_alloc_id: bool,
+    ) -> InterpResult<'tcx, (Cow<'b, Allocation<Self::Provenance, Self::AllocExtra, Self::CustomAllocator>>, AllocId)>;
 
     /// Hook for performing extra checks on a memory read access.
     ///
@@ -435,6 +438,7 @@ pub macro compile_time_machine(<$mir: lifetime, $tcx: lifetime>) {
 
     type AllocExtra = ();
     type FrameExtra = ();
+    type CustomAllocator = std::alloc::Global;
 
     #[inline(always)]
     fn enforce_alignment(_ecx: &InterpCx<$mir, $tcx, Self>) -> bool {
@@ -483,8 +487,9 @@ pub macro compile_time_machine(<$mir: lifetime, $tcx: lifetime>) {
         _id: AllocId,
         alloc: Cow<'b, Allocation>,
         _kind: Option<MemoryKind<Self::MemoryKind>>,
-    ) -> InterpResult<$tcx, Cow<'b, Allocation<Self::Provenance>>> {
-        Ok(alloc)
+        _adjust_alloc_id: bool,
+    ) -> InterpResult<$tcx, (Cow<'b, Allocation<Self::Provenance>>, AllocId)> {
+        Ok((alloc, _id))
     }
 
     fn extern_static_base_pointer(

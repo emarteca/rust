@@ -1,4 +1,5 @@
 #![allow(rustc::potential_query_instability)]
+#![feature(allocator_api)]
 #![feature(box_patterns)]
 #![cfg_attr(bootstrap, feature(let_chains))]
 #![feature(let_else)]

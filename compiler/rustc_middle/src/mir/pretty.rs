@@ -773,21 +773,21 @@ pub fn write_allocations<'tcx>(
 /// After the hex dump, an ascii dump follows, replacing all unprintable characters (control
 /// characters or characters whose value is larger than 127) with a `.`
 /// This also prints relocations adequately.
-pub fn display_allocation<'a, 'tcx, Prov, Extra>(
+pub fn display_allocation<'a, 'tcx, Prov, Extra, A: std::alloc::Allocator + Default + std::fmt::Debug>(
     tcx: TyCtxt<'tcx>,
-    alloc: &'a Allocation<Prov, Extra>,
-) -> RenderAllocation<'a, 'tcx, Prov, Extra> {
+    alloc: &'a Allocation<Prov, Extra, A>,
+) -> RenderAllocation<'a, 'tcx, Prov, Extra, A> {
     RenderAllocation { tcx, alloc }
 }
 
 #[doc(hidden)]
-pub struct RenderAllocation<'a, 'tcx, Prov, Extra> {
+pub struct RenderAllocation<'a, 'tcx, Prov, Extra, A: std::alloc::Allocator + Default + std::fmt::Debug> {
     tcx: TyCtxt<'tcx>,
-    alloc: &'a Allocation<Prov, Extra>,
+    alloc: &'a Allocation<Prov, Extra, A>,
 }
 
-impl<'a, 'tcx, Prov: Provenance, Extra> std::fmt::Display
-    for RenderAllocation<'a, 'tcx, Prov, Extra>
+impl<'a, 'tcx, Prov: Provenance, Extra, A: std::alloc::Allocator + Default + std::fmt::Debug> std::fmt::Display
+    for RenderAllocation<'a, 'tcx, Prov, Extra, A>
 {
     fn fmt(&self, w: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let RenderAllocation { tcx, alloc } = *self;
@@ -831,9 +831,9 @@ fn write_allocation_newline(
 /// The `prefix` argument allows callers to add an arbitrary prefix before each line (even if there
 /// is only one line). Note that your prefix should contain a trailing space as the lines are
 /// printed directly after it.
-fn write_allocation_bytes<'tcx, Prov: Provenance, Extra>(
+fn write_allocation_bytes<'tcx, Prov: Provenance, Extra, A: std::alloc::Allocator + Default + std::fmt::Debug>(
     tcx: TyCtxt<'tcx>,
-    alloc: &Allocation<Prov, Extra>,
+    alloc: &Allocation<Prov, Extra, A>,
     w: &mut dyn std::fmt::Write,
     prefix: &str,
 ) -> std::fmt::Result {

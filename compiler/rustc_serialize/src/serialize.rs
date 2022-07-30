@@ -229,12 +229,13 @@ impl<D: Decoder, T> Decodable<D> for PhantomData<T> {
     }
 }
 
-impl<D: Decoder, T: Decodable<D>> Decodable<D> for Box<[T]> {
-    fn decode(d: &mut D) -> Box<[T]> {
-        let v: Vec<T> = Decodable::decode(d);
+impl<D: Decoder, A: std::alloc::Allocator + Default, T: Decodable<D>> Decodable<D> for Box<[T], A> {
+    fn decode(d: &mut D) -> Box<[T], A> {
+        let v: Vec<T, A> = Decodable::decode(d);
         v.into_boxed_slice()
     }
 }
+
 
 impl<S: Encoder, T: Encodable<S>> Encodable<S> for Rc<T> {
     fn encode(&self, s: &mut S) {
@@ -264,12 +265,13 @@ impl<S: Encoder, T: Encodable<S>> Encodable<S> for Vec<T> {
     }
 }
 
-impl<D: Decoder, T: Decodable<D>> Decodable<D> for Vec<T> {
-    default fn decode(d: &mut D) -> Vec<T> {
+impl<D: Decoder, T: Decodable<D>, A: std::alloc::Allocator + Default> Decodable<D> for Vec<T, A> {
+    default fn decode(d: &mut D) -> Vec<T, A> {
         let len = d.read_usize();
+        let allocator = A::default();
         // SAFETY: we set the capacity in advance, only write elements, and
         // only set the length at the end once the writing has succeeded.
-        let mut vec = Vec::with_capacity(len);
+        let mut vec = Vec::with_capacity_in(len, allocator);
         unsafe {
             let ptr: *mut T = vec.as_mut_ptr();
             for i in 0..len {
@@ -457,13 +459,15 @@ impl<D: Decoder, T: Decodable<D>> Decodable<D> for Arc<T> {
     }
 }
 
-impl<S: Encoder, T: ?Sized + Encodable<S>> Encodable<S> for Box<T> {
-    fn encode(&self, s: &mut S) {
-        (**self).encode(s);
+impl<D: Decoder, A: std::alloc::Allocator + Default, T: Decodable<D>> Decodable<D> for Box<T, A> {
+    fn decode(d: &mut D) -> Box<T, A> {
+        let allocator = A::default();
+        Box::new_in(Decodable::decode(d), allocator)
     }
 }
-impl<D: Decoder, T: Decodable<D>> Decodable<D> for Box<T> {
-    fn decode(d: &mut D) -> Box<T> {
-        Box::new(Decodable::decode(d))
+
+impl<S: Encoder, T: ?Sized + Encodable<S>, A: std::alloc::Allocator + Default> Encodable<S> for Box<T, A> {
+    fn encode(&self, s: &mut S) {
+        (**self).encode(s)
     }
 }
