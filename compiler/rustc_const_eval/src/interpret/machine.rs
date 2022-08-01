@@ -263,7 +263,7 @@ pub trait Machine<'mir, 'tcx>: Sized {
         _tcx: TyCtxt<'tcx>,
         _machine: &Self,
         _alloc_id: AllocId,
-        _allocation: ConstAllocation<'tcx>,
+        _allocation: ConstAllocation<'tcx, AllocId, (), Self::CustomAllocator>,
         _static_def_id: Option<DefId>,
         _is_write: bool,
     ) -> InterpResult<'tcx> {
@@ -432,13 +432,14 @@ pub macro compile_time_machine(<$mir: lifetime, $tcx: lifetime>) {
 
     type ExtraFnVal = !;
 
-    type MemoryMap =
-        rustc_data_structures::fx::FxHashMap<AllocId, (MemoryKind<Self::MemoryKind>, Allocation)>;
-    const GLOBAL_KIND: Option<Self::MemoryKind> = None; // no copying of globals from `tcx` to machine memory
-
     type AllocExtra = ();
     type FrameExtra = ();
     type CustomAllocator = std::alloc::Global;
+
+    type MemoryMap =
+        rustc_data_structures::fx::FxHashMap<AllocId, 
+        (MemoryKind<Self::MemoryKind>, Allocation<Self::Provenance, Self::AllocExtra, Self::CustomAllocator>)>;
+    const GLOBAL_KIND: Option<Self::MemoryKind> = None; // no copying of globals from `tcx` to machine memory
 
     #[inline(always)]
     fn enforce_alignment(_ecx: &InterpCx<$mir, $tcx, Self>) -> bool {
@@ -485,10 +486,10 @@ pub macro compile_time_machine(<$mir: lifetime, $tcx: lifetime>) {
     fn adjust_allocation<'b>(
         _ecx: &InterpCx<$mir, $tcx, Self>,
         _id: AllocId,
-        alloc: Cow<'b, Allocation>,
+        alloc: Cow<'b, Allocation<AllocId, (), Self::CustomAllocator>>,
         _kind: Option<MemoryKind<Self::MemoryKind>>,
         _adjust_alloc_id: bool,
-    ) -> InterpResult<$tcx, (Cow<'b, Allocation<Self::Provenance>>, AllocId)> {
+    ) -> InterpResult<$tcx, (Cow<'b, Allocation<Self::Provenance, (), Self::CustomAllocator>>, AllocId)> {
         Ok((alloc, _id))
     }
 
