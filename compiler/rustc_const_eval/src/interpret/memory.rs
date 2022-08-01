@@ -21,7 +21,7 @@ use rustc_target::abi::{Align, HasDataLayout, Size};
 use super::{
     alloc_range, AllocId, AllocMap, AllocRange, Allocation, CheckInAllocMsg, GlobalAlloc, InterpCx,
     InterpResult, Machine, MayLeak, Pointer, PointerArithmetic, Provenance, Scalar,
-    ScalarMaybeUninit,
+    ScalarMaybeUninit, AllocationCustomAllocator,
 };
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -113,16 +113,16 @@ pub struct Memory<'mir, 'tcx, M: Machine<'mir, 'tcx>> {
 /// A reference to some allocation that was already bounds-checked for the given region
 /// and had the on-access machine hooks run.
 #[derive(Copy, Clone)]
-pub struct AllocRef<'a, 'tcx, Prov, Extra, A: std::alloc::Allocator + Default + std::fmt::Debug> {
-    alloc: &'a Allocation<Prov, Extra, A>,
+pub struct AllocRef<'a, 'tcx, Prov, Extra> {
+    alloc: &'a Allocation<Prov, Extra>,
     range: AllocRange,
     tcx: TyCtxt<'tcx>,
     alloc_id: AllocId,
 }
 /// A reference to some allocation that was already bounds-checked for the given region
 /// and had the on-access machine hooks run.
-pub struct AllocRefMut<'a, 'tcx, Prov, Extra, A: std::alloc::Allocator + Default + std::fmt::Debug> {
-    alloc: &'a mut Allocation<Prov, Extra, A>,
+pub struct AllocRefMut<'a, 'tcx, Prov, Extra> {
+    alloc: &'a mut Allocation<Prov, Extra>,
     range: AllocRange,
     tcx: TyCtxt<'tcx>,
     alloc_id: AllocId,
@@ -218,7 +218,7 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
     /// This can fail only of `alloc` contains relocations.
     pub fn allocate_raw_ptr(
         &mut self,
-        alloc: Allocation<AllocId, (), M::CustomAllocator>,
+        alloc: Allocation,//<AllocId, (), M::CustomAllocator>,
         kind: MemoryKind<M::MemoryKind>,
     ) -> InterpResult<'tcx, Pointer<M::Provenance>> {
         let id = self.tcx.reserve_alloc_id();
@@ -478,7 +478,7 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
         &self,
         id: AllocId,
         is_write: bool,
-    ) -> InterpResult<'tcx, Cow<'tcx, Allocation<M::Provenance, M::AllocExtra, M::CustomAllocator>>> {
+    ) -> InterpResult<'tcx, Cow<'tcx, Allocation<M::Provenance, M::AllocExtra>>> {
         // println!("Global alloc: {:?}", id);
         let (alloc, def_id) = match self.tcx.try_get_global_alloc(id) {
             Some(GlobalAlloc::Memory(mem)) => {
@@ -532,7 +532,7 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
     fn get_alloc_raw(
         &self,
         id: AllocId,
-    ) -> InterpResult<'tcx, &Allocation<M::Provenance, M::AllocExtra, M::CustomAllocator>> {
+    ) -> InterpResult<'tcx, &Allocation<M::Provenance, M::AllocExtra>> {
         // The error type of the inner closure here is somewhat funny.  We have two
         // ways of "erroring": An actual error, or because we got a reference from
         // `get_global_alloc` that we can actually use directly without inserting anything anywhere.
@@ -568,7 +568,7 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
         ptr: Pointer<Option<M::Provenance>>,
         size: Size,
         align: Align,
-    ) -> InterpResult<'tcx, Option<AllocRef<'a, 'tcx, M::Provenance, M::AllocExtra, M::CustomAllocator>>> {
+    ) -> InterpResult<'tcx, Option<AllocRef<'a, 'tcx, M::Provenance, M::AllocExtra>>> {
         let align = M::enforce_alignment(self).then_some(align);
         let ptr_and_alloc = self.check_and_deref_ptr(
             ptr,
@@ -606,7 +606,7 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
     fn get_alloc_raw_mut(
         &mut self,
         id: AllocId,
-    ) -> InterpResult<'tcx, (&mut Allocation<M::Provenance, M::AllocExtra, M::CustomAllocator>, &mut M)> {
+    ) -> InterpResult<'tcx, (&mut Allocation<M::Provenance, M::AllocExtra>, &mut M)> {
         // We have "NLL problem case #3" here, which cannot be worked around without loss of
         // efficiency even for the common case where the key is in the map.
         // <https://rust-lang.github.io/rfcs/2094-nll.html#problem-case-3-conditional-control-flow-across-functions>
@@ -635,7 +635,7 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
         ptr: Pointer<Option<M::Provenance>>,
         size: Size,
         align: Align,
-    ) -> InterpResult<'tcx, Option<AllocRefMut<'a, 'tcx, M::Provenance, M::AllocExtra, M::CustomAllocator>>> {
+    ) -> InterpResult<'tcx, Option<AllocRefMut<'a, 'tcx, M::Provenance, M::AllocExtra>>> {
         let parts = self.get_ptr_access(ptr, size, align)?;
         if let Some((alloc_id, offset, prov)) = parts {
             let tcx = *self.tcx;
@@ -830,11 +830,11 @@ pub struct DumpAllocs<'a, 'mir, 'tcx, M: Machine<'mir, 'tcx>> {
 impl<'a, 'mir, 'tcx, M: Machine<'mir, 'tcx>> std::fmt::Debug for DumpAllocs<'a, 'mir, 'tcx, M> {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // Cannot be a closure because it is generic in `Prov`, `Extra`.
-        fn write_allocation_track_relocs<'tcx, Prov: Provenance, Extra, A: std::alloc::Allocator + Default + std::fmt::Debug>(
+        fn write_allocation_track_relocs<'tcx, Prov: Provenance, Extra>(
             fmt: &mut std::fmt::Formatter<'_>,
             tcx: TyCtxt<'tcx>,
             allocs_to_print: &mut VecDeque<AllocId>,
-            alloc: &Allocation<Prov, Extra, A>,
+            alloc: &Allocation<Prov, Extra>,
         ) -> std::fmt::Result {
             for alloc_id in alloc.relocations().values().filter_map(|prov| prov.get_alloc_id()) {
                 allocs_to_print.push_back(alloc_id);
@@ -901,8 +901,8 @@ impl<'a, 'mir, 'tcx, M: Machine<'mir, 'tcx>> std::fmt::Debug for DumpAllocs<'a, 
 }
 
 /// Reading and writing.
-impl<'tcx, 'a, Prov: Provenance, Extra, A: std::alloc::Allocator + Default + std::fmt::Debug> 
-    AllocRefMut<'a, 'tcx, Prov, Extra, A> {
+impl<'tcx, 'a, Prov: Provenance, Extra> 
+    AllocRefMut<'a, 'tcx, Prov, Extra> {
     /// `range` is relative to this allocation reference, not the base of the allocation.
     pub fn write_scalar(
         &mut self,
@@ -935,8 +935,8 @@ impl<'tcx, 'a, Prov: Provenance, Extra, A: std::alloc::Allocator + Default + std
     }
 }
 
-impl<'tcx, 'a, Prov: Provenance, Extra, A: std::alloc::Allocator + Default + std::fmt::Debug> 
-    AllocRef<'a, 'tcx, Prov, Extra, A> {
+impl<'tcx, 'a, Prov: Provenance, Extra> 
+    AllocRef<'a, 'tcx, Prov, Extra> {
     /// `range` is relative to this allocation reference, not the base of the allocation.
     pub fn read_scalar(
         &self,

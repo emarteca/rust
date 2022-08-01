@@ -14,7 +14,7 @@ use rustc_target::spec::abi::Abi as CallAbi;
 
 use super::{
     AllocId, AllocRange, Allocation, ConstAllocation, Frame, ImmTy, InterpCx, InterpResult,
-    MemoryKind, OpTy, Operand, PlaceTy, Pointer, Provenance, Scalar, StackPopUnwind,
+    MemoryKind, OpTy, Operand, PlaceTy, Pointer, Provenance, Scalar, StackPopUnwind, 
 };
 
 /// Data returned by Machine::stack_pop,
@@ -102,12 +102,10 @@ pub trait Machine<'mir, 'tcx>: Sized {
     /// Extra data stored in every allocation.
     type AllocExtra: Debug + Clone + 'static;
 
-    type CustomAllocator: std::alloc::Allocator + Default + Debug + Clone + 'static;
-
     /// Memory's allocation map
     type MemoryMap: AllocMap<
             AllocId,
-            (MemoryKind<Self::MemoryKind>, Allocation<Self::Provenance, Self::AllocExtra, Self::CustomAllocator>),
+            (MemoryKind<Self::MemoryKind>, Allocation<Self::Provenance, Self::AllocExtra>),
         > + Default
         + Clone;
 
@@ -263,7 +261,7 @@ pub trait Machine<'mir, 'tcx>: Sized {
         _tcx: TyCtxt<'tcx>,
         _machine: &Self,
         _alloc_id: AllocId,
-        _allocation: ConstAllocation<'tcx, AllocId, (), Self::CustomAllocator>,
+        _allocation: ConstAllocation<'tcx>, //, AllocId, (), Self::CustomAllocator>,
         _static_def_id: Option<DefId>,
         _is_write: bool,
     ) -> InterpResult<'tcx> {
@@ -335,10 +333,10 @@ pub trait Machine<'mir, 'tcx>: Sized {
     fn adjust_allocation<'b>(
         ecx: &InterpCx<'mir, 'tcx, Self>,
         id: AllocId,
-        alloc: Cow<'b, Allocation<AllocId, (), Self::CustomAllocator>>,
+        alloc: Cow<'b, Allocation>,//<AllocId, (), Self::CustomAllocator>>,
         kind: Option<MemoryKind<Self::MemoryKind>>,
         adjust_alloc_id: bool,
-    ) -> InterpResult<'tcx, (Cow<'b, Allocation<Self::Provenance, Self::AllocExtra, Self::CustomAllocator>>, AllocId)>;
+    ) -> InterpResult<'tcx, (Cow<'b, Allocation<Self::Provenance, Self::AllocExtra>>, AllocId)>;
 
     /// Hook for performing extra checks on a memory read access.
     ///
@@ -434,11 +432,10 @@ pub macro compile_time_machine(<$mir: lifetime, $tcx: lifetime>) {
 
     type AllocExtra = ();
     type FrameExtra = ();
-    type CustomAllocator = std::alloc::Global;
-
+    
     type MemoryMap =
         rustc_data_structures::fx::FxHashMap<AllocId, 
-        (MemoryKind<Self::MemoryKind>, Allocation<Self::Provenance, Self::AllocExtra, Self::CustomAllocator>)>;
+        (MemoryKind<Self::MemoryKind>, Allocation)>;
     const GLOBAL_KIND: Option<Self::MemoryKind> = None; // no copying of globals from `tcx` to machine memory
 
     #[inline(always)]
@@ -486,10 +483,10 @@ pub macro compile_time_machine(<$mir: lifetime, $tcx: lifetime>) {
     fn adjust_allocation<'b>(
         _ecx: &InterpCx<$mir, $tcx, Self>,
         _id: AllocId,
-        alloc: Cow<'b, Allocation<AllocId, (), Self::CustomAllocator>>,
+        alloc: Cow<'b, Allocation>, //<AllocId, (), Self::CustomAllocator>>,
         _kind: Option<MemoryKind<Self::MemoryKind>>,
         _adjust_alloc_id: bool,
-    ) -> InterpResult<$tcx, (Cow<'b, Allocation<Self::Provenance, (), Self::CustomAllocator>>, AllocId)> {
+    ) -> InterpResult<$tcx, (Cow<'b, Allocation<Self::Provenance>>, AllocId)> {
         Ok((alloc, _id))
     }
 

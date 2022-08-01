@@ -1,5 +1,4 @@
 //! Type context book-keeping.
-
 use crate::arena::Arena;
 use crate::dep_graph::{DepGraph, DepKind, DepKindStruct};
 use crate::hir::place::Place as HirPlace;
@@ -8,7 +7,7 @@ use crate::lint::{struct_lint_level, LintLevelSource};
 use crate::middle::codegen_fn_attrs::CodegenFnAttrs;
 use crate::middle::resolve_lifetime;
 use crate::middle::stability;
-use crate::mir::interpret::{self, Allocation, ConstAllocation};
+use crate::mir::interpret::{self, Allocation, AllocationCustomAllocator, ConstAllocation};
 use crate::mir::{
     Body, BorrowCheckResult, Field, Local, Place, PlaceElem, ProjectionKind, Promoted,
 };

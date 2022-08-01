@@ -128,7 +128,7 @@ pub use self::value::{get_slice_bytes, ConstAlloc, ConstValue, Scalar, ScalarMay
 
 pub use self::allocation::{
     alloc_range, AllocRange, Allocation, ConstAllocation, InitChunk, InitChunkIter, InitMask,
-    Relocations,
+    Relocations, AllocationCustomAllocator,
 };
 
 pub use self::pointer::{Pointer, PointerArithmetic, Provenance};

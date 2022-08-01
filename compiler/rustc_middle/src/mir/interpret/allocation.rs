@@ -29,12 +29,12 @@ use super::{
 // Note: for performance reasons when interning, some of the `Allocation` fields can be partially
 // hashed. (see the `Hash` impl below for more details), so the impl is not derived.
 
-#[derive(Clone, Debug)]//, PartialOrd, Ord, PartialEq, Eq)]
-// #[derive(HashStable)]
-pub struct Allocation<Prov = AllocId, Extra = (), A: std::alloc::Allocator + Default + std::fmt::Debug = std::alloc::Global> { 
+#[derive(Clone, Debug, PartialOrd, Ord, PartialEq, Eq, TyEncodable, TyDecodable)]
+#[derive(HashStable)]
+pub struct Allocation<Prov = AllocId, Extra = ()> { 
     /// The actual bytes of the allocation.
     /// Note that the bytes of a pointer represent the offset of the pointer.
-    bytes: Box<[u8], A>,
+    bytes: Box<[u8]>,
     /// Maps from byte addresses to extra data for each pointer.
     /// Only the first byte of a pointer is inserted into the map; i.e.,
     /// every entry in this map applies to `pointer_size` consecutive bytes starting
@@ -53,71 +53,71 @@ pub struct Allocation<Prov = AllocId, Extra = (), A: std::alloc::Allocator + Def
     pub extra: Extra,
 }
 
-use rustc_data_structures::stable_hasher::HashStable;
-use rustc_data_structures::stable_hasher::StableHasher;
-impl<CTX, Prov: HashStable<CTX>, Extra: HashStable<CTX>, A: std::alloc::Allocator + Default + std::fmt::Debug> HashStable<CTX> for Allocation<Prov, Extra, A> {
-    fn hash_stable(&self, ctx: &mut CTX, hasher: &mut StableHasher) {
-        self.bytes.hash_stable(ctx, hasher);
-    }
-}
+// use rustc_data_structures::stable_hasher::HashStable;
+// use rustc_data_structures::stable_hasher::StableHasher;
+// impl<CTX, Prov: HashStable<CTX>, Extra: HashStable<CTX>, A: std::alloc::Allocator + Default + std::fmt::Debug> HashStable<CTX> for Allocation<Prov, Extra, A> {
+//     fn hash_stable(&self, ctx: &mut CTX, hasher: &mut StableHasher) {
+//         self.bytes.hash_stable(ctx, hasher);
+//     }
+// }
 
-impl<Prov: Eq + std::cmp::Ord, Extra: Eq + std::cmp::Ord, A: std::alloc::Allocator + Default + std::fmt::Debug> PartialEq for Allocation<Prov, Extra, A> {
-    fn eq(&self, other: &Self) -> bool {
-        self.bytes == other.bytes && 
-        self.relocations == other.relocations && 
-        self.init_mask == other.init_mask && 
-        self.align == other.align && 
-        self.mutability == other.mutability && 
-        self.extra == other.extra
-    }
-}
-impl<Prov: Eq + std::cmp::Ord, Extra: Eq + std::cmp::Ord, A: std::alloc::Allocator + Default + std::fmt::Debug> Eq for Allocation<Prov, Extra, A> {}
-impl<Prov: Eq + std::cmp::Ord, Extra: Eq + std::cmp::Ord, A: std::alloc::Allocator + Default + std::fmt::Debug> std::cmp::Ord for Allocation<Prov, Extra, A> {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        (&self.bytes, &self.relocations, &self.init_mask, &self.align, &self.mutability, &self.extra)
-        .cmp(&(&other.bytes, &other.relocations, &other.init_mask, &other.align, &other.mutability, &other.extra))
-    }
-}
-impl<Prov: Eq + std::cmp::Ord, Extra: Eq + std::cmp::Ord, A: std::alloc::Allocator + Default + std::fmt::Debug> std::cmp::PartialOrd for Allocation<Prov, Extra, A> {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
+// impl<Prov: Eq + std::cmp::Ord, Extra: Eq + std::cmp::Ord, A: std::alloc::Allocator + Default + std::fmt::Debug> PartialEq for Allocation<Prov, Extra, A> {
+//     fn eq(&self, other: &Self) -> bool {
+//         self.bytes == other.bytes && 
+//         self.relocations == other.relocations && 
+//         self.init_mask == other.init_mask && 
+//         self.align == other.align && 
+//         self.mutability == other.mutability && 
+//         self.extra == other.extra
+//     }
+// }
+// impl<Prov: Eq + std::cmp::Ord, Extra: Eq + std::cmp::Ord, A: std::alloc::Allocator + Default + std::fmt::Debug> Eq for Allocation<Prov, Extra, A> {}
+// impl<Prov: Eq + std::cmp::Ord, Extra: Eq + std::cmp::Ord, A: std::alloc::Allocator + Default + std::fmt::Debug> std::cmp::Ord for Allocation<Prov, Extra, A> {
+//     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+//         (&self.bytes, &self.relocations, &self.init_mask, &self.align, &self.mutability, &self.extra)
+//         .cmp(&(&other.bytes, &other.relocations, &other.init_mask, &other.align, &other.mutability, &other.extra))
+//     }
+// }
+// impl<Prov: Eq + std::cmp::Ord, Extra: Eq + std::cmp::Ord, A: std::alloc::Allocator + Default + std::fmt::Debug> std::cmp::PartialOrd for Allocation<Prov, Extra, A> {
+//     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+//         Some(self.cmp(other))
+//     }
+// }
 
-impl<D: rustc_type_ir::TyDecoder, Prov: rustc_serialize::Decodable<D>
-    , Extra: rustc_serialize::Decodable<D>,  A: std::alloc::Allocator + Default + std::fmt::Debug> rustc_serialize::Decodable<D> for Allocation<Prov, Extra, A> {
-    fn decode(_d: &mut D) -> Allocation<Prov, Extra, A> {
-        // d.read_struct("Allocation", 6, |d| {
-        //     let bytes = d.read_struct_field("bytes", 0, |d| { Box::<[u8], A>::decode(d) })?;
-        //     let relocations = d.read_struct_field("relocations", 1, |d| { Relocations::<Prov>::decode(d) })?;
-        //     let init_mask = d.read_struct_field("init_mask", 2, |d| { InitMask::decode(d) })?;
-        //     let align = d.read_struct_field("align", 3, |d| { Align::decode(d) })?;
-        //     let mutability = d.read_struct_field("mutability", 4, |d| { Mutability::decode(d) })?;
-        //     let extra = d.read_struct_field("extra", 4, |d| { Extra::decode(d) })?;
-        //     Ok(Allocation {
-        //         bytes,
-        //         relocations,
-        //         init_mask,
-        //         align,
-        //         mutability,
-        //         extra
-        //     })
-        // })
-        todo!();
-    }
-}
+// impl<D: rustc_type_ir::TyDecoder, Prov: rustc_serialize::Decodable<D>
+//     , Extra: rustc_serialize::Decodable<D>,  A: std::alloc::Allocator + Default + std::fmt::Debug> rustc_serialize::Decodable<D> for Allocation<Prov, Extra, A> {
+//     fn decode(_d: &mut D) -> Allocation<Prov, Extra, A> {
+//         // d.read_struct("Allocation", 6, |d| {
+//         //     let bytes = d.read_struct_field("bytes", 0, |d| { Box::<[u8], A>::decode(d) })?;
+//         //     let relocations = d.read_struct_field("relocations", 1, |d| { Relocations::<Prov>::decode(d) })?;
+//         //     let init_mask = d.read_struct_field("init_mask", 2, |d| { InitMask::decode(d) })?;
+//         //     let align = d.read_struct_field("align", 3, |d| { Align::decode(d) })?;
+//         //     let mutability = d.read_struct_field("mutability", 4, |d| { Mutability::decode(d) })?;
+//         //     let extra = d.read_struct_field("extra", 4, |d| { Extra::decode(d) })?;
+//         //     Ok(Allocation {
+//         //         bytes,
+//         //         relocations,
+//         //         init_mask,
+//         //         align,
+//         //         mutability,
+//         //         extra
+//         //     })
+//         // })
+//         todo!();
+//     }
+// }
 
-impl<S: rustc_type_ir::TyEncoder> rustc_serialize::Encodable<S> for Allocation {
-    fn encode(&self, _s: &mut S) {
-        // self.bytes.encode(s);
-        // self.relocations.encode(s);
-        // self.init_mask.encode(s);
-        // self.align.encode(s);
-        // self.mutability.encode(s);
-        // self.extra.encode(s);
-        todo!();
-    }
-}
+// impl<S: rustc_type_ir::TyEncoder> rustc_serialize::Encodable<S> for Allocation {
+//     fn encode(&self, _s: &mut S) {
+//         // self.bytes.encode(s);
+//         // self.relocations.encode(s);
+//         // self.init_mask.encode(s);
+//         // self.align.encode(s);
+//         // self.mutability.encode(s);
+//         // self.extra.encode(s);
+//         todo!();
+//     }
+// }
 
 /// This is the maximum size we will hash at a time, when interning an `Allocation` and its
 /// `InitMask`. Note, we hash that amount of bytes twice: at the start, and at the end of a buffer.
@@ -134,7 +134,7 @@ const MAX_HASHED_BUFFER_LEN: usize = 2 * MAX_BYTES_TO_HASH;
 // expensive especially since it uses `FxHash`: it's better suited to short keys, not potentially
 // big buffers like the actual bytes of allocation. We can partially hash some fields when they're
 // large.
-impl<A: std::alloc::Allocator + Default + std::fmt::Debug> hash::Hash for Allocation<AllocId, (), A> {
+impl hash::Hash for Allocation {
     fn hash<H: hash::Hasher>(&self, state: &mut H) {
         // Partially hash the `bytes` buffer when it is large. To limit collisions with common
         // prefixes and suffixes, we hash the length and some slices of the buffer.
@@ -167,40 +167,39 @@ impl<A: std::alloc::Allocator + Default + std::fmt::Debug> hash::Hash for Alloca
 /// Here things are different because only const allocations are interned. This
 /// means that both the inner type (`Allocation`) and the outer type
 /// (`ConstAllocation`) are used quite a bit.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash, HashStable)]
 #[rustc_pass_by_value]
-pub struct ConstAllocation<'tcx, Prov: Eq + std::cmp::Ord = AllocId, Extra: Eq + std::cmp::Ord  = (),
-A: std::alloc::Allocator + Default + std::fmt::Debug = std::alloc::Global>(
-    pub Interned<'tcx, Allocation<Prov, Extra, A>>,
+pub struct ConstAllocation<'tcx, Prov = AllocId, Extra = ()>(
+    pub Interned<'tcx, Allocation<Prov, Extra>>,
 );
 
-impl<'tcx, CTX, Prov: HashStable<CTX> + Eq + std::cmp::Ord, Extra: HashStable<CTX> + Eq + std::cmp::Ord, 
-    A: std::alloc::Allocator + Default + std::fmt::Debug> HashStable<CTX> for ConstAllocation<'tcx, Prov, Extra, A> {
-    fn hash_stable(&self, ctx: &mut CTX, hasher: &mut StableHasher) {
-        self.0.0.hash_stable(ctx, hasher);
-    }
-}
+// impl<'tcx, CTX, Prov: HashStable<CTX> + Eq + std::cmp::Ord, Extra: HashStable<CTX> + Eq + std::cmp::Ord, 
+//     A: std::alloc::Allocator + Default + std::fmt::Debug> HashStable<CTX> for ConstAllocation<'tcx, Prov, Extra, A> {
+//     fn hash_stable(&self, ctx: &mut CTX, hasher: &mut StableHasher) {
+//         self.0.0.hash_stable(ctx, hasher);
+//     }
+// }
 
-impl<'tcx, Prov: Eq + std::cmp::Ord, Extra: Eq + std::cmp::Ord, 
-    A: std::alloc::Allocator + Default + std::fmt::Debug> PartialEq for ConstAllocation<'tcx, Prov, Extra, A> {
-    fn eq(&self, other: &Self) -> bool {
-        self.0.0 == other.0.0
-    }
-}
-impl<'tcx, Prov: Eq + std::cmp::Ord, Extra: Eq + std::cmp::Ord, 
-    A: std::alloc::Allocator + Default + std::fmt::Debug> Eq for ConstAllocation<'tcx, Prov, Extra, A> {}
-impl<'tcx, Prov: Eq + std::cmp::Ord, Extra: Eq + std::cmp::Ord, 
-    A: std::alloc::Allocator + Default + std::fmt::Debug> std::cmp::Ord for ConstAllocation<'tcx, Prov, Extra, A> {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        (self.0.0).cmp(other.0.0)
-    }
-}
-impl<'tcx, Prov: Eq + std::cmp::Ord, Extra: Eq + std::cmp::Ord, 
-    A: std::alloc::Allocator + Default + std::fmt::Debug> std::cmp::PartialOrd for ConstAllocation<'tcx, Prov, Extra, A> {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
+// impl<'tcx, Prov: Eq + std::cmp::Ord, Extra: Eq + std::cmp::Ord, 
+//     A: std::alloc::Allocator + Default + std::fmt::Debug> PartialEq for ConstAllocation<'tcx, Prov, Extra, A> {
+//     fn eq(&self, other: &Self) -> bool {
+//         self.0.0 == other.0.0
+//     }
+// }
+// impl<'tcx, Prov: Eq + std::cmp::Ord, Extra: Eq + std::cmp::Ord, 
+//     A: std::alloc::Allocator + Default + std::fmt::Debug> Eq for ConstAllocation<'tcx, Prov, Extra, A> {}
+// impl<'tcx, Prov: Eq + std::cmp::Ord, Extra: Eq + std::cmp::Ord, 
+//     A: std::alloc::Allocator + Default + std::fmt::Debug> std::cmp::Ord for ConstAllocation<'tcx, Prov, Extra, A> {
+//     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+//         (self.0.0).cmp(other.0.0)
+//     }
+// }
+// impl<'tcx, Prov: Eq + std::cmp::Ord, Extra: Eq + std::cmp::Ord, 
+//     A: std::alloc::Allocator + Default + std::fmt::Debug> std::cmp::PartialOrd for ConstAllocation<'tcx, Prov, Extra, A> {
+//     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+//         Some(self.cmp(other))
+//     }
+// }
 
 impl<'tcx> fmt::Debug for ConstAllocation<'tcx> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -210,18 +209,17 @@ impl<'tcx> fmt::Debug for ConstAllocation<'tcx> {
     }
 }
 
-impl<'tcx, Prov: Eq + std::cmp::Ord, Extra: Eq + std::cmp::Ord, 
-    A: std::alloc::Allocator + Default + std::fmt::Debug> ConstAllocation<'tcx, Prov, Extra, A> {
-    pub fn inner(self) -> &'tcx Allocation<Prov, Extra, A> {
+impl<'tcx, Prov, Extra> ConstAllocation<'tcx, Prov, Extra> {
+    pub fn inner(self) -> &'tcx Allocation<Prov, Extra> {
         self.0.0
     }
 }
 
-impl<'tcx, A: std::alloc::Allocator + Default + std::fmt::Debug> hash::Hash for ConstAllocation<'tcx, AllocId, (), A> {
-    fn hash<H: hash::Hasher>(&self, state: &mut H) {
-        self.0.0.hash(state);
-    }
-}
+// impl<'tcx, A: std::alloc::Allocator + Default + std::fmt::Debug> hash::Hash for ConstAllocation<'tcx, AllocId, (), A> {
+//     fn hash<H: hash::Hasher>(&self, state: &mut H) {
+//         self.0.0.hash(state);
+//     }
+// }
 
 /// We have our own error type that does not know about the `AllocId`; that information
 /// is added when converting to `InterpError`.
@@ -302,16 +300,32 @@ impl AllocRange {
     }
 }
 
+pub trait AllocationCustomAllocator: std::marker::Sized {
+    type CustomAllocator: std::alloc::Allocator + Default + std::fmt::Debug + Clone + 'static;
+
+    fn from_bytes<'a>(
+        slice: impl Into<Cow<'a, [u8]>>,
+        align: Align,
+        mutability: Mutability,
+    ) -> Self;
+
+    fn uninit<'tcx>(size: Size, align: Align, _panic_on_fail: bool) -> InterpResult<'tcx, Self>;
+
+    fn from_bytes_byte_aligned_immutable<'a>(slice: impl Into<Cow<'a, [u8]>>) -> Self;
+}
+
 // The constructors are all without extra; the extra gets added by a machine hook later.
-impl<Prov, A: std::alloc::Allocator + Default + std::fmt::Debug> Allocation<Prov, (), A> {
+impl<Prov> AllocationCustomAllocator for Allocation<Prov> {
+    type CustomAllocator = std::alloc::Global;
+
     /// Creates an allocation initialized by the given bytes
-    pub fn from_bytes<'a>(
+    fn from_bytes<'a>(
         slice: impl Into<Cow<'a, [u8]>>,
         align: Align,
         mutability: Mutability,
     ) -> Self {
-        let allocator = A::default();
-        let mut vec_bytes = Vec::<u8, A>::new_in(allocator);
+        let allocator = Self::CustomAllocator::default();
+        let mut vec_bytes = Vec::<u8, Self::CustomAllocator>::new_in(allocator);
         for b in slice.into().iter() {
             vec_bytes.push(*b);
         }
@@ -329,7 +343,7 @@ impl<Prov, A: std::alloc::Allocator + Default + std::fmt::Debug> Allocation<Prov
         }
     }
 
-    pub fn from_bytes_byte_aligned_immutable<'a>(slice: impl Into<Cow<'a, [u8]>>) -> Self {
+    fn from_bytes_byte_aligned_immutable<'a>(slice: impl Into<Cow<'a, [u8]>>) -> Self {
         Allocation::from_bytes(slice, Align::ONE, Mutability::Not)
     }
 
@@ -337,9 +351,9 @@ impl<Prov, A: std::alloc::Allocator + Default + std::fmt::Debug> Allocation<Prov
     /// available to the compiler to do so.
     ///
     /// If `panic_on_fail` is true, this will never return `Err`.
-    pub fn uninit<'tcx>(size: Size, align: Align, _panic_on_fail: bool) -> InterpResult<'tcx, Self> {
-        let allocator = A::default();
-        let bytes = Box::<[u8], A>::new_zeroed_slice_in(size.bytes_usize(), allocator); 
+    fn uninit<'tcx>(size: Size, align: Align, _panic_on_fail: bool) -> InterpResult<'tcx, Self> {
+        let allocator = Self::CustomAllocator::default();
+        let bytes = Box::<[u8], Self::CustomAllocator>::new_zeroed_slice_in(size.bytes_usize(), allocator); 
         // doesn't have a try_ version of this function for custom allocators
         // .map_err(|_| {
             // This results in an error that can happen non-deterministically, since the memory
@@ -369,7 +383,7 @@ impl<Prov, A: std::alloc::Allocator + Default + std::fmt::Debug> Allocation<Prov
     }
 }
 
-impl<E, A: std::alloc::Allocator + Default + std::fmt::Debug> Allocation<AllocId, E, A> {
+impl Allocation {
     /// Adjust allocation from the ones in tcx to a custom Machine instance
     /// with a different Provenance and Extra type.
     pub fn adjust_from_tcx<Prov, Extra, Err>(
@@ -377,7 +391,7 @@ impl<E, A: std::alloc::Allocator + Default + std::fmt::Debug> Allocation<AllocId
         cx: &impl HasDataLayout,
         extra: Extra,
         mut adjust_ptr: impl FnMut(Pointer<AllocId>) -> Result<Pointer<Prov>, Err>,
-    ) -> Result<Allocation<Prov, Extra, A>, Err> {
+    ) -> Result<Allocation<Prov, Extra>, Err> {
         // Compute new pointer provenance, which also adjusts the bytes.
         let mut bytes = self.bytes;
         let mut new_relocations = Vec::with_capacity(self.relocations.0.len());
@@ -405,7 +419,7 @@ impl<E, A: std::alloc::Allocator + Default + std::fmt::Debug> Allocation<AllocId
 }
 
 /// Raw accessors. Provide access to otherwise private bytes.
-impl<Prov, Extra, A: std::alloc::Allocator + Default + std::fmt::Debug> Allocation<Prov, Extra, A> {
+impl<Prov, Extra> Allocation<Prov, Extra> {
     pub fn len(&self) -> usize {
         self.bytes.len()
     }
@@ -434,7 +448,7 @@ impl<Prov, Extra, A: std::alloc::Allocator + Default + std::fmt::Debug> Allocati
 }
 
 /// Byte accessors.
-impl<Prov: Provenance, Extra, A: std::alloc::Allocator + Default + std::fmt::Debug> Allocation<Prov, Extra, A> {
+impl<Prov: Provenance, Extra> Allocation<Prov, Extra> {
     /// This is the entirely abstraction-violating way to just grab the raw bytes without
     /// caring about relocations. It just deduplicates some code between `read_scalar`
     /// and `get_bytes_internal`.
@@ -528,7 +542,7 @@ impl<Prov: Provenance, Extra, A: std::alloc::Allocator + Default + std::fmt::Deb
 }
 
 /// Reading and writing.
-impl<Prov: Provenance, Extra, A: std::alloc::Allocator + Default + std::fmt::Debug> Allocation<Prov, Extra, A> {
+impl<Prov: Provenance, Extra> Allocation<Prov, Extra> {
     /// Validates that `ptr.offset` and `ptr.offset + size` do not point to the middle of a
     /// relocation. If `allow_uninit`/`allow_ptr` is `false`, also enforces that the memory in the
     /// given range contains no uninitialized bytes/relocations.
@@ -663,7 +677,7 @@ impl<Prov: Provenance, Extra, A: std::alloc::Allocator + Default + std::fmt::Deb
 }
 
 /// Relocations.
-impl<Prov: Copy, Extra, A: std::alloc::Allocator + Default + std::fmt::Debug> Allocation<Prov, Extra, A> {
+impl<Prov: Copy, Extra> Allocation<Prov, Extra> {
     /// Returns all relocations overlapping with the given pointer-offset pair.
     fn get_relocations(&self, cx: &impl HasDataLayout, range: AllocRange) -> &[(Size, Prov)] {
         // We have to go back `pointer_size - 1` bytes, as that one would still overlap with
@@ -786,7 +800,7 @@ pub struct AllocationRelocations<Prov> {
     dest_relocations: Vec<(Size, Prov)>,
 }
 
-impl<Prov: Copy, Extra, A: std::alloc::Allocator + Default + std::fmt::Debug> Allocation<Prov, Extra, A> {
+impl<Prov: Copy, Extra> Allocation<Prov, Extra> {
     pub fn prepare_relocation_copy(
         &self,
         cx: &impl HasDataLayout,
@@ -1293,7 +1307,7 @@ impl<'a> Iterator for InitChunkIter<'a> {
 }
 
 /// Uninitialized bytes.
-impl<Prov: Copy, Extra, A: std::alloc::Allocator + Default + std::fmt::Debug> Allocation<Prov, Extra, A> {
+impl<Prov: Copy, Extra> Allocation<Prov, Extra> {
     /// Checks whether the given range  is entirely initialized.
     ///
     /// Returns `Ok(())` if it's initialized. Otherwise returns the range of byte
@@ -1341,7 +1355,7 @@ impl InitMaskCompressed {
 }
 
 /// Transferring the initialization mask to other allocations.
-impl<Prov, Extra, A: std::alloc::Allocator + Default + std::fmt::Debug> Allocation<Prov, Extra, A> {
+impl<Prov, Extra> Allocation<Prov, Extra> {
     /// Creates a run-length encoding of the initialization mask; panics if range is empty.
     ///
     /// This is essentially a more space-efficient version of

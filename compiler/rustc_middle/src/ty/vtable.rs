@@ -1,7 +1,7 @@
 use std::convert::TryFrom;
 use std::fmt;
 
-use crate::mir::interpret::{alloc_range, AllocId, Allocation, Pointer, Scalar, ScalarMaybeUninit};
+use crate::mir::interpret::{alloc_range, AllocId, Allocation, AllocationCustomAllocator, Pointer, Scalar, ScalarMaybeUninit};
 use crate::ty::{self, Instance, PolyTraitRef, Ty, TyCtxt};
 use rustc_ast::Mutability;
 
