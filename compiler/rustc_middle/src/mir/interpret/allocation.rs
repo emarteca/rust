@@ -755,6 +755,28 @@ impl<Prov: Copy, Extra, A: std::alloc::Allocator + Default + std::fmt::Debug> Al
     }
 }
 
+/// Copy an allocation with a new allocator
+impl<Prov: Copy + Provenance, Extra: Copy, A: std::alloc::Allocator + Default + std::fmt::Debug> Allocation<Prov, Extra, A> {
+    pub fn copy_with_new_allocator<B: std::alloc::Allocator + Default + std::fmt::Debug>(&self) -> Allocation<Prov, Extra, B> {
+        // copy the bytes: this is the same code as for the from_bytes constructor
+        let allocator = B::default();
+        let mut vec_bytes = Vec::<u8, B>::new_in(allocator);
+        // for b in &self.bytes.into_iter() {
+        //     vec_bytes.push(*b);
+        // }
+        vec_bytes.copy_from_slice(&self.bytes);
+        let bytes = vec_bytes.into_boxed_slice();
+        Allocation {
+            bytes, 
+            relocations: self.relocations.clone(),
+            init_mask: self.init_mask.clone(),
+            align: self.align,
+            mutability: self.mutability,
+            extra: self.extra,
+        }
+    }
+}
+
 /// "Relocations" stores the provenance information of pointers stored in memory.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, TyEncodable, TyDecodable)]
 pub struct Relocations<Prov = AllocId>(SortedMap<Size, Prov>);

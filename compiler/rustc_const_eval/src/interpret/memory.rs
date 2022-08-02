@@ -227,7 +227,7 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
             M::GLOBAL_KIND.map(MemoryKind::Machine),
             "dynamically allocating global memory"
         );
-        let (alloc, id) = M::adjust_allocation(self, id, Cow::Owned(alloc), Some(kind), true /* do reassign allocid */)?;
+        let (alloc, id) = M::adjust_allocation(self, id, Cow::Owned(alloc), Some(kind), /* true do reassign allocid */)?;
         self.memory.alloc_map.insert(id, (kind, alloc.into_owned()));
         Ok(M::adjust_alloc_base_pointer(self, Pointer::from(id)))
     }
@@ -478,7 +478,7 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
         &self,
         id: AllocId,
         is_write: bool,
-    ) -> InterpResult<'tcx, Cow<'tcx, Allocation<M::Provenance, M::AllocExtra, M::CustomAllocator>>> {
+    ) -> InterpResult<'tcx, Cow<'tcx, Allocation<M::Provenance, M::AllocExtra>>> {
         // println!("Global alloc: {:?}", id);
         let (alloc, def_id) = match self.tcx.try_get_global_alloc(id) {
             Some(GlobalAlloc::Memory(mem)) => {
@@ -513,12 +513,12 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
         };
         M::before_access_global(*self.tcx, &self.machine, id, alloc, def_id, is_write)?;
         // We got tcx memory. Let the machine initialize its "extra" stuff.
-        match M::adjust_allocation(
+        match M::adjust_allocation_global(
             self,
             id, // always use the ID we got as input, not the "hidden" one.
             Cow::Borrowed(alloc.inner()),
             M::GLOBAL_KIND.map(MemoryKind::Machine),
-            false, // don't reassign the allocid
+            // false, // don't reassign the allocid
         ) {
             Ok((cow, _new_id)) => {
                 Ok(cow)}
